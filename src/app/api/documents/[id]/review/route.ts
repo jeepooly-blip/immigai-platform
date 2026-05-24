@@ -166,7 +166,7 @@ export async function POST(
     // Auth check
     const user = await prisma.user.findUnique({ where: { id: session.user.id }, select: { role: true, organizationId: true } })
     const isOwner = doc.userId === session.user.id || doc.case.userId === session.user.id
-    const isCorpAdmin = user?.role === 'corporate_admin' && user.organizationId === doc.case.organizationId
+    const isCorpAdmin = user?.role === 'admin' && user.organizationId === doc.case.organizationId
     if (!isOwner && !isCorpAdmin) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
     }
