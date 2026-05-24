@@ -16,7 +16,7 @@ async function hasAccess(caseId: string, userId: string): Promise<boolean> {
     select: { role: true, organizationId: true },
   })
   return !!(
-    user?.role === 'corporate_admin' &&
+    user?.role === 'admin' &&
     user.organizationId &&
     user.organizationId === c.organizationId
   )
