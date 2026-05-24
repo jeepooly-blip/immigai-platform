@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
         select: { role: true, organizationId: true },
       })
       const isCorpAdmin =
-        user?.role === 'corporate_admin' &&
+        user?.role === 'admin' &&
         user.organizationId === c.organizationId
       if (!isCorpAdmin) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
