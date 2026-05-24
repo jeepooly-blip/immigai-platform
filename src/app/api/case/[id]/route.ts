@@ -34,7 +34,7 @@ export async function GET(
         select: { role: true, organizationId: true },
       })
       const isCorporateAdmin =
-        user?.role === 'corporate_admin' &&
+     user?.role === 'corporate_admin' &&
         user.organizationId !== null &&
         user.organizationId === c.organizationId
 
