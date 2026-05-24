@@ -1,0 +1,449 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+// PostgreSQL required — use https://neon.tech or https://supabase.com for free hosting
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─────────────────────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────────────────────
+enum UserRole {
+  attorney
+  client
+  admin
+  partner
+}
+
+enum SubscriptionStatus {
+  inactive
+  active
+  past_due
+  canceled
+  trialing
+}
+
+enum CaseStatus {
+  active
+  submitted
+  approved
+  denied
+  rfe_received
+  on_hold
+}
+
+enum VerificationStatus {
+  pending
+  verified
+  flagged
+  expired
+  requires_review
+}
+
+enum PaymentStatus {
+  pending
+  succeeded
+  failed
+  refunded
+}
+
+// ─────────────────────────────────────────────────────────────
+// AUTH / USERS
+// ─────────────────────────────────────────────────────────────
+model User {
+  id             String             @id @default(uuid())
+  email          String             @unique
+  name           String?
+  password       String?            // nullable for OAuth users
+  image          String?
+  emailVerified  DateTime?
+  role           UserRole           @default(attorney)
+  firm           String?
+  organizationId String?
+  nationality    String?
+  currentStatus  String?            // current immigration status (for client users)
+  preferredLang  String             @default("en")
+  isAdmin        Boolean            @default(false)
+
+  // Stripe
+  stripeCustomerId   String?            @unique
+  subscriptionStatus SubscriptionStatus @default(inactive)
+  subscriptionId     String?
+  creditsRemaining   Int                @default(0)
+  planId             String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  organization   Organization?  @relation(fields: [organizationId], references: [id])
+  cases          Case[]
+  documents      Document[]
+  forms          Form[]
+  chatSessions   ChatSession[]
+  aiDrafts       AiDraft[]
+  payments       Payment[]
+  adminLogsAs    AdminLog[]     @relation("AdminActor")
+  accounts       Account[]
+  sessions       Session[]
+}
+
+// OAuth accounts (for social login)
+model Account {
+  id                String  @id @default(uuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refreshToken      String? @db.Text
+  accessToken       String? @db.Text
+  expiresAt         Int?
+  tokenType         String?
+  scope             String?
+  idToken           String? @db.Text
+  sessionState      String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─────────────────────────────────────────────────────────────
+// ORGANIZATIONS (law firms / corporates)
+// ─────────────────────────────────────────────────────────────
+model Organization {
+  id        String   @id @default(uuid())
+  name      String
+  domain    String?
+  planId    String?
+  createdAt DateTime @default(now())
+
+  users User[]
+  cases Case[]
+}
+
+// ─────────────────────────────────────────────────────────────
+// CASES
+// ─────────────────────────────────────────────────────────────
+model Case {
+  id             String     @id @default(uuid())
+  userId         String
+  organizationId String?
+  clientUserId   String?    // optional link to a client User account
+
+  caseType     String       @default("employment")
+  visaCategory String
+  currentStage String       @default("Intake")
+  totalStages  Int          @default(6)
+  status       CaseStatus   @default(active)
+
+  applicantName       String
+  applicantEmail      String?
+  petitionerName      String?
+  petitionerType      String?
+
+  approvalProbabilityScore  Float    @default(0)
+  estimatedProcessingTime   Int?
+  estimatedCompletionDate   DateTime?
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization   Organization?  @relation(fields: [organizationId], references: [id])
+  timelineEvents TimelineEvent[]
+  checklistItems ChecklistItem[]
+  deadlineEvents DeadlineEvent[]
+  documents      Document[]
+  forms          Form[]
+  aiDrafts       AiDraft[]
+}
+
+// ─────────────────────────────────────────────────────────────
+// TIMELINE EVENTS
+// ─────────────────────────────────────────────────────────────
+model TimelineEvent {
+  id               String   @id @default(uuid())
+  caseId           String
+  case             Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  eventType        String
+  title            String
+  description      String
+  eventDate        DateTime @default(now())
+  isAutomated      Boolean  @default(false)
+  notificationSent Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+}
+
+// ─────────────────────────────────────────────────────────────
+// CHECKLIST ITEMS
+// ─────────────────────────────────────────────────────────────
+model ChecklistItem {
+  id         String   @id @default(uuid())
+  caseId     String
+  case       Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  itemLabel  String
+  category   String   @default("document")
+  formCode   String?
+  required   Boolean  @default(true)
+  completed  Boolean  @default(false)
+  documentId String?
+  dueDate    DateTime?
+  sortOrder  Int      @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─────────────────────────────────────────────────────────────
+// DEADLINE EVENTS
+// ─────────────────────────────────────────────────────────────
+model DeadlineEvent {
+  id           String   @id @default(uuid())
+  caseId       String
+  case         Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  deadlineType String
+  title        String
+  description  String?
+  dueDate      DateTime
+  completed    Boolean  @default(false)
+  alertDays    Int      @default(14)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─────────────────────────────────────────────────────────────
+// DOCUMENTS
+// ─────────────────────────────────────────────────────────────
+model Document {
+  id              String             @id @default(uuid())
+  caseId          String
+  userId          String
+  checklistItemId String?
+
+  documentType       String
+  originalName       String
+  mimeType           String
+  fileSizeBytes      Int              @default(0)
+  fileUrl            String           // Vercel Blob or S3 URL
+  storageProvider    String           @default("blob")  // "blob" | "s3"
+
+  verificationStatus VerificationStatus @default(pending)
+  verifiedAt         DateTime?
+  expiryDate         DateTime?
+
+  extractedFields String?   // JSON
+  ocrText         String?   @db.Text
+  aiSummary       String?   @db.Text
+  completenessScore Int?
+  flags           String?   // JSON array of flag strings
+
+  uploadedAt DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
+}
+
+// ─────────────────────────────────────────────────────────────
+// FORMS (USCIS form completion)
+// ─────────────────────────────────────────────────────────────
+model Form {
+  id                   String   @id @default(uuid())
+  caseId               String
+  userId               String
+  formType             String   // I-129, I-130, I-140, I-485, DS-260
+  completionPercentage Int      @default(0)
+  currentSection       Int      @default(0)
+  status               String   @default("draft")  // draft | complete | submitted
+  fieldData            String   @default("{}") @db.Text  // JSON
+  lastSavedAt          DateTime @default(now())
+  submittedAt          DateTime?
+  exportedAt           DateTime?
+  exportFormat         String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
+}
+
+// ─────────────────────────────────────────────────────────────
+// CHAT SESSIONS (multilingual AI assistant)
+// ─────────────────────────────────────────────────────────────
+model ChatSession {
+  id         String   @id @default(uuid())
+  userId     String?
+  caseId     String?
+  language   String   @default("en")
+  title      String?
+  messages   String   @default("[]") @db.Text  // JSON
+  intakeData String   @default("{}") @db.Text  // JSON
+  resolved   Boolean  @default(false)
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
+
+// ─────────────────────────────────────────────────────────────
+// AI DRAFTS (RFE responses, cover letters, motions)
+// ─────────────────────────────────────────────────────────────
+model AiDraft {
+  id     String @id @default(uuid())
+  caseId String
+  userId String
+
+  draftType       String
+  title           String
+
+  rfeText         String?  @db.Text
+  rfeGrounds      String?  // JSON array
+  rfeDeadline     DateTime?
+
+  content         String   @db.Text
+  contentSections String?  @db.Text  // JSON
+  confidenceScore Int      @default(0)
+
+  status         String  @default("draft")  // draft | reviewed | finalized | exported
+  reviewedByUser Boolean @default(false)
+  userEdits      String? @db.Text
+  reviewNotes    String? @db.Text
+
+  exportedAt   DateTime?
+  exportFormat String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
+}
+
+// ─────────────────────────────────────────────────────────────
+// REGULATORY ALERTS (live USCIS / Federal Register updates)
+// ─────────────────────────────────────────────────────────────
+model RegulatoryAlert {
+  id String @id @default(uuid())
+
+  alertType   String          // fee_change | policy_update | cap_season | form_change | general
+  severity    String          @default("medium")  // critical | high | medium | low | info
+  title       String
+  summary     String          @db.Text
+  fullContent String?         @db.Text
+  sourceUrl   String?
+  sourceName  String          @default("USCIS")
+
+  affectedVisaTypes String    @default("[]")  // JSON array
+  affectsAllCases   Boolean   @default(false)
+
+  externalId  String?  @unique  // dedup GUID
+
+  fetchedAt   DateTime @default(now())
+  publishedAt DateTime?
+  dismissedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─────────────────────────────────────────────────────────────
+// PAYMENTS & SUBSCRIPTIONS (from R9)
+// ─────────────────────────────────────────────────────────────
+model Payment {
+  id                    String        @id @default(uuid())
+  userId                String
+  amount                Int           // in cents
+  currency              String        @default("usd")
+  status                PaymentStatus @default(pending)
+  stripePaymentIntentId String?       @unique
+  stripeInvoiceId       String?
+  description           String?
+  metadata              String?       // JSON
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─────────────────────────────────────────────────────────────
+// ADMIN AUDIT LOG (from R9)
+// ─────────────────────────────────────────────────────────────
+model AdminLog {
+  id               String   @id @default(uuid())
+  adminUserId      String
+  actionType       String   // user.suspend | user.delete | case.transfer | subscription.override | alert.dismiss
+  targetResourceId String?
+  targetType       String?  // "user" | "case" | "document" | "subscription"
+  details          String   @default("{}") @db.Text  // JSON
+
+  createdAt DateTime @default(now())
+
+  adminUser User @relation("AdminActor", fields: [adminUserId], references: [id])
+}
+
+// ─────────────────────────────────────────────────────────────
+// INTERVIEW PREP SESSIONS (from R8)
+// ─────────────────────────────────────────────────────────────
+model InterviewSession {
+  id        String   @id @default(uuid())
+  userId    String
+  caseId    String?
+  visaType  String
+  mode      String   @default("practice")  // practice | mock | review
+  questions String   @default("[]") @db.Text  // JSON
+  answers   String   @default("[]") @db.Text  // JSON
+  feedback  String?  @db.Text
+  score     Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─────────────────────────────────────────────────────────────
+// GEO / SAFETY (from R1)
+// ─────────────────────────────────────────────────────────────
+model SafetyLog {
+  id          String   @id @default(uuid())
+  userId      String?
+  sessionId   String?
+  inputHash   String?  // hashed user input for flagging, not raw text
+  flagType    String   // hallucination | legal_overreach | pii_detected | harmful_content
+  severity    String   @default("low")
+  context     String?
+  resolved    Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+}
+
+// ─────────────────────────────────────────────────────────────
+// NEXTAUTH VERIFICATION TOKEN
+// ─────────────────────────────────────────────────────────────
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
