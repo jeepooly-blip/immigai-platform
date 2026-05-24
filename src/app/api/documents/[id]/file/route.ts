@@ -16,7 +16,7 @@ async function requireDocumentAccess(docId: string, userId: string) {
     where: { id: userId },
     select: { role: true, organizationId: true },
   })
-  if (user?.role === 'corporate_admin' && user.organizationId === doc.case.organizationId) return doc
+  if (user?.role === 'admin' && user.organizationId === doc.case.organizationId) return doc
   return null
 }
 
