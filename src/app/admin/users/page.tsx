@@ -96,7 +96,7 @@ export default function AdminUsersPage() {
                         <option value="admin">Admin</option>
                         <option value="partner">Partner</option>
                       </select>
-                      {u.isAdmin && <Shield className="w-3 h-3 text-violet-500" title="Platform admin" />}
+                      {u.isAdmin && <span title="Platform admin"><Shield className="w-3 h-3 text-violet-500" /></span>}
                     </div>
                   </td>
                   <td className="px-4 py-3">
