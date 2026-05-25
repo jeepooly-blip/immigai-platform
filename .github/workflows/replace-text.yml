@@ -1,0 +1,26 @@
+name: Find and Replace Text
+
+on:
+  workflow_dispatch:  # This lets you run it manually when you need
+
+jobs:
+  replace:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Replace corporate_admin with admin
+        uses: richardrigutins/replace-in-files@v2
+        with:
+          files: '**/*.{ts,tsx,js,jsx}'  # All your code files
+          search-text: 'corporate_admin'
+          replacement-text: 'admin'
+          exclude: 'node_modules/**,.git/**'
+      
+      - name: Commit changes
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add .
+          git diff --quiet && git diff --staged --quiet || git commit -m "Replace corporate_admin with admin"
+          git push
