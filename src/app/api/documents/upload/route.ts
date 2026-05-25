@@ -17,7 +17,7 @@ async function requireCaseAccess(caseId: string, userId: string) {
     where: { id: userId },
     select: { role: true, organizationId: true },
   })
-  if (user?.role === 'corporate_admin' && user.organizationId === c.organizationId) return true
+  if (user?.role === 'admin' && user.organizationId === c.organizationId) return true
   return false
 }
 
