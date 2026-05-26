@@ -33,12 +33,12 @@ export async function GET(
         where: { id: session.user.id },
         select: { role: true, organizationId: true },
       })
-      const isCorporateAdmin =
-     user?.role === 'admin' &&
+      const isAdmin =
+        user?.role === 'admin' &&
         user.organizationId !== null &&
         user.organizationId === c.organizationId
 
-      if (!isCorporateAdmin) {
+      if (!isAdmin) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
       }
     }
